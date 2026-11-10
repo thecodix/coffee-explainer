@@ -1,0 +1,22 @@
+[project]
+name = "coffee-explainer"
+version = "0.1.0"
+description = "Ask the Coffee Observatory: data loader (observatory export -> Postgres + pgvector)"
+requires-python = ">=3.12"
+dependencies = [
+    "psycopg[binary]>=3.2",
+    "pgvector>=0.3",
+    "numpy>=1.26",
+    "fastembed>=0.7",
+]
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = ["explainer_data/product_kind.py"]  # vendored verbatim from thecodix/roasters
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
