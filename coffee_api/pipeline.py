@@ -13,6 +13,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from explainer_data.documents import COUNTRIES
+
 from .config import Settings
 from .guard import screen
 from .llm import Attempt, LLMResult, LLMUnavailable
@@ -40,12 +42,17 @@ Rules:
 - For anything about coffee (prices, origins, processes), filter products with is_coffee = true.
 - Compare prices only with price_per_100g_eur. Never derive prices or margins from api.representation.
 - Prefer the aggregated views (price_by_origin, origin_mix, roasters) when they answer the question.
+- Count roasters from api.roasters, not from products.
+- Rankings by price must select the sample size (products_priced, or count(*)) and ignore groups with fewer than
+  5 priced products, so one odd product cannot top a ranking.
 - Return at most 50 rows unless the question asks for a full list; order results meaningfully.
 - If the data cannot answer the question, return SELECT * FROM api.data_coverage and say why in explanation."""
 
 ANSWER_SYSTEM = """You answer questions about European specialty-coffee roasters using ONLY the evidence given:
 query results and retrieved cards. Rules:
 - Every number you state must appear in the evidence. Do not compute new figures beyond simple rounding.
+- State only what the evidence says. No background knowledge, no claims about quality or flavour it does not make.
+- When the evidence gives sample sizes (products_priced, counts), mention them for rankings and medians.
 - If the evidence is empty or does not answer the question, say so plainly; never guess.
 - Mention relevant gaps as caveats (for example, origin is stated on only part of the products).
 - Plain English, at most 120 words, no markdown headings. Country names, not codes."""
@@ -83,21 +90,32 @@ class Trace:
 
 
 def _attempts(attempts: list[Attempt]) -> list[dict]:
-    return [{"model": a.model, "outcome": a.outcome, "ms": a.ms, "status_code": a.status_code} for a in attempts]
+    return [
+        {"model": a.model, "outcome": a.outcome, "ms": a.ms, "status_code": a.status_code}
+        | ({"error": a.error} if a.error else {})
+        for a in attempts
+    ]
 
 
-_NUMBER = re.compile(r"(?<![\w.])\d+(?:[.,]\d+)?(?![\w])")
+_NUMBER = re.compile(r"(?<![\w.])\d{1,3}(?:,\d{3})+(?:\.\d+)?(?![\w])|(?<![\w.])\d+(?:[.,]\d+)?(?![\w])")
+
+
+def _value(raw: str) -> float:
+    """'1,200' (thousands) -> 1200; '5,16' (decimal comma) -> 5.16; '5.16' -> 5.16."""
+    if re.fullmatch(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?", raw):
+        return float(raw.replace(",", ""))
+    return float(raw.replace(",", "."))
 
 
 def unverified_numbers(answer: str, evidence: str, question: str) -> list[str]:
     """Figures in the answer that appear nowhere in the evidence (or the question). Small integers are ignored."""
     known = {"100"}  # prices are quoted "per 100 g"
     for raw in _NUMBER.findall(evidence + " " + question):
-        value = float(raw.replace(",", "."))
+        value = _value(raw)
         known.update({raw, f"{value:g}", f"{value:.2f}", f"{value:.1f}", str(round(value))})
     missing = []
     for raw in _NUMBER.findall(answer):
-        value = float(raw.replace(",", "."))
+        value = _value(raw)
         if value <= 10 and value.is_integer():
             continue
         if not ({raw, f"{value:g}", f"{value:.2f}", f"{value:.1f}"} & known):
@@ -242,6 +260,7 @@ class Pipeline:
                     last_error = f"failed in the database: {str(error).splitlines()[0]}"
                     user = f"{question}\n\nYour previous SQL {last_error}. Write a corrected query."
                     continue
+            rows = _name_countries(columns, rows)
             evidence = {"sql": safe_sql, "columns": columns, "rows": rows[:50], "row_count": len(rows)}
             source = Source(
                 kind="sql", title=", ".join(sorted(schema.views & _tables_in(safe_sql))) or "api", detail=safe_sql
@@ -261,6 +280,22 @@ class Pipeline:
         evidence = [{"title": h["title"], "text": h["body"], "kind": h["kind"]} for h in hits]
         sources = [Source(kind="document", title=h["title"], detail=h["kind"], url=h.get("url")) for h in hits]
         return {"steps": trace.steps, "evidence": evidence, "sources": sources}
+
+
+def _name_countries(columns: list[str], rows: list[list[Any]]) -> list[list[Any]]:
+    """'ET' -> 'Ethiopia (ET)' in country columns, so the answer names countries instead of codes."""
+    country_cols = [i for i, c in enumerate(columns) if c.endswith("country")]
+    if not country_cols:
+        return rows
+    named = []
+    for row in rows:
+        row = list(row)
+        for i in country_cols:
+            code = row[i]
+            if isinstance(code, str) and code in COUNTRIES:
+                row[i] = f"{COUNTRIES[code]} ({code})"
+        named.append(row)
+    return named
 
 
 def _tables_in(sql: str) -> set[str]:

@@ -86,7 +86,7 @@ def search(
     register_vector(conn)
     vector = embedder.embed([query])[0]
     sql = (
-        "SELECT doc_id, kind, title, body, url, 1 - (embedding <=> %s) AS score FROM rag.documents "
+        "SELECT doc_id, kind, title, body, url, metadata, 1 - (embedding <=> %s) AS score FROM rag.documents "
         "WHERE embedding_model = %s" + (" AND kind = ANY(%s)" if kinds else "") + " ORDER BY embedding <=> %s LIMIT %s"
     )
     params: tuple = (vector, embedder.name, list(kinds), vector, k) if kinds else (vector, embedder.name, vector, k)
