@@ -70,7 +70,8 @@ def create_app(settings: Settings | None = None, pipeline: Pipeline | None = Non
                     answer="Questions are paused right now. The walkthrough still works.",
                 ).model_dump(),
             )
-        ip = request.headers.get("fly-client-ip") or (request.client.host if request.client else "unknown")
+        # Behind Cloud Run's front end, uvicorn --proxy-headers sets request.client from X-Forwarded-For.
+        ip = request.client.host if request.client else "unknown"
         if hit := limiter.check(ip):
             return JSONResponse(
                 status_code=429, content=AskResponse(status="rate_limited", answer=LIMIT_MESSAGES[hit]).model_dump()

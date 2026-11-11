@@ -1,6 +1,6 @@
 """In-memory limits: per IP per minute, per IP per day, and a global daily quota that protects the Groq budget.
 
-Fine for one Fly machine. With more than one, move the counters to a shared store (e.g. Upstash Redis).
+Fine for one instance (Cloud Run max-instances=1). With more than one, move the counters to a shared store (e.g. Upstash Redis).
 """
 
 from __future__ import annotations

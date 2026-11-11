@@ -1,4 +1,4 @@
-# API image for Fly.io. The embedding model is downloaded at build time so a cold start does not fetch 220 MB.
+# API image for Google Cloud Run (built by GitHub Actions, published to ghcr.io). The embedding model is downloaded at build time so a cold start does not fetch 220 MB.
 FROM python:3.12-slim
 
 COPY --from=ghcr.io/astral-sh/uv:0.9 /uv /usr/local/bin/uv
@@ -28,5 +28,7 @@ RUN python -c "import os; from explainer_data.embed import FastEmbedder; FastEmb
 RUN useradd --create-home --uid 1000 app && chown -R app /app
 USER app
 
+# Cloud Run passes the port in $PORT (8080 by default).
+ENV PORT=8080
 EXPOSE 8080
-CMD ["uvicorn", "coffee_api.app:app", "--host", "0.0.0.0", "--port", "8080", "--proxy-headers", "--forwarded-allow-ips", "*"]
+CMD ["sh", "-c", "exec uvicorn coffee_api.app:app --host 0.0.0.0 --port ${PORT} --proxy-headers --forwarded-allow-ips '*'"]

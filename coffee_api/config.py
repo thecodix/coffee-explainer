@@ -48,7 +48,7 @@ class Settings:
     rag_top_k: int = field(default_factory=lambda: _int("RAG_TOP_K", 5))
     sql_row_limit: int = field(default_factory=lambda: _int("SQL_ROW_LIMIT", 200))
 
-    # Protections. One Fly machine keeps these counters in memory; more machines would need a shared store.
+    # Protections. One instance keeps these counters in memory (Cloud Run max-instances=1); more would need a shared store.
     qa_enabled: bool = field(default_factory=lambda: os.environ.get("QA_ENABLED", "true").lower() == "true")
     per_ip_per_minute: int = field(default_factory=lambda: _int("PER_IP_PER_MINUTE", 5))
     per_ip_per_day: int = field(default_factory=lambda: _int("PER_IP_PER_DAY", 30))

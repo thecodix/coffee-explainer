@@ -1,0 +1,45 @@
+name: API image
+
+# Builds the API image (embedding model included) and publishes it to GitHub Container Registry.
+# Cloud Run pulls public ghcr.io images directly, so no Artifact Registry storage is needed.
+on:
+  push:
+    branches: [master]
+    paths: [Dockerfile, pyproject.toml, uv.lock, coffee_api/**, explainer_data/**, db/**, .github/workflows/image.yml]
+  pull_request:
+    paths: [Dockerfile, .dockerignore, .github/workflows/image.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/coffee-explainer-api
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: The embedding model is inside the image (no network)
+        run: |
+          docker run --rm --network none ${{ env.IMAGE }}:${{ github.sha }} \
+            python -c "from explainer_data.embed import FastEmbedder; v = FastEmbedder().embed(['hola'])[0]; assert len(v) == 384; print('ok', len(v))"
+      - name: Publish
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker tag ${{ env.IMAGE }}:${{ github.sha }} ${{ env.IMAGE }}:latest
+          docker push ${{ env.IMAGE }}:${{ github.sha }}
+          docker push ${{ env.IMAGE }}:latest
+          echo "Published ${{ env.IMAGE }}:${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"

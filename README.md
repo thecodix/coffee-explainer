@@ -96,18 +96,30 @@ curl -s localhost:8020/ask -H 'content-type: application/json' \
 | `CORS_ORIGINS` | `http://localhost:5173` |
 | `EMBEDDING_MODEL` | same model the loader used |
 
-## Deploy (Fly.io)
+## Deploy (Google Cloud Run)
 
-One machine in Frankfurt (next to Neon), stopped when idle. The image already contains the embedding model.
+GitHub Actions builds the image (embedding model included) on every push to `master` and publishes it to
+`ghcr.io/thecodix/coffee-explainer-api`. Cloud Run pulls that public image, so nothing is stored in Artifact
+Registry. The service runs in `europe-west1`, scales to zero and is capped at one instance (the rate-limit
+counters live in memory). At the demo's daily quota it stays inside Cloud Run's monthly free tier.
+
+One-time setup:
 
 ```bash
-fly auth login
-fly launch --no-deploy --copy-config        # keeps fly.toml; pick another app name if taken
-fly secrets set READER_DATABASE_URL='postgresql://explainer_api:…@…-pooler…/neondb?sslmode=require' \
-                GROQ_API_KEY='…'
-fly deploy --ha=false                        # ONE machine: the rate-limit counters live in memory
-fly scale count 1                            # in case a second machine was created
-curl https://<app>.fly.dev/health
+brew install --cask google-cloud-sdk
+gcloud auth login
+gcloud projects create coffee-explainer-<suffix> && gcloud config set project coffee-explainer-<suffix>
+# link a billing account in the console, then add a budget alert (Billing > Budgets & alerts, e.g. 1 EUR)
+gcloud services enable run.googleapis.com
 ```
 
-Kill-switch: `fly secrets set QA_ENABLED=false` (or `fly scale count 0` to stop everything).
+Make the ghcr.io package public once (GitHub > Packages > coffee-explainer-api > Package settings > Public).
+
+Deploy or update:
+
+```bash
+./deploy/cloudrun.sh              # :latest
+./deploy/cloudrun.sh <git-sha>    # a specific build
+```
+
+Kill-switch: `QA_ENABLED=false ./deploy/cloudrun.sh`, or delete the service with `gcloud run services delete`.
