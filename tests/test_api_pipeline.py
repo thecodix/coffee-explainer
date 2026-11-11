@@ -153,3 +153,13 @@ def test_http_endpoints(data):
     off = create_app(settings(qa_enabled=False), pipeline=Pipeline(settings(), llm, data), data=data)
     with TestClient(off) as client:
         assert client.post("/ask", json={"question": "x"}).json()["status"] == "disabled"
+
+
+def test_dead_connection_is_replaced(data, conn):
+    """Neon drops idle connections; the pool must test them instead of handing one out dead."""
+    with data.pool.connection() as pooled:
+        pid = pooled.info.backend_pid
+    with psycopg.connect(conn.info_url, autocommit=True) as admin:
+        assert admin.execute("SELECT pg_terminate_backend(%s)", (pid,)).fetchone() == (True,)
+    hits = data.retrieve("Huila", 1)  # without the pool check: "server closed the connection unexpectedly"
+    assert hits and hits[0]["doc_id"]

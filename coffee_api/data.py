@@ -40,7 +40,17 @@ def _plain(value: Any) -> Any:
 
 class Data:
     def __init__(self, database_url: str, embedding_model: str) -> None:
-        self.pool = ConnectionPool(database_url, min_size=1, max_size=4, open=False, kwargs={"autocommit": True})
+        # Neon suspends idle compute and drops idle connections: test each connection before handing it out,
+        # and retire idle ones well before Neon does.
+        self.pool = ConnectionPool(
+            database_url,
+            min_size=1,
+            max_size=4,
+            open=False,
+            kwargs={"autocommit": True},
+            check=ConnectionPool.check_connection,
+            max_idle=120,
+        )
         self._embedding_model = embedding_model
         self._embedder: Embedder | None = None
         self._schema: SchemaInfo | None = None

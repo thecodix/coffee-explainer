@@ -43,8 +43,12 @@ Rules:
 - Compare prices only with price_per_100g_eur. Never derive prices or margins from api.representation.
 - Prefer the aggregated views (price_by_origin, origin_mix, roasters) when they answer the question.
 - Count roasters from api.roasters, not from products.
-- Rankings by price must select the sample size (products_priced, or count(*)) and ignore groups with fewer than
-  5 priced products, so one odd product cannot top a ranking.
+- Rankings by price must select the sample sizes (products_priced and roasters, or count(*) and
+  count(DISTINCT roaster_id)) and keep only groups with at least 5 priced products from at least 3 roasters,
+  so one shop's pricing cannot top a ranking.
+- Never use LIMIT 1 for "which is the most / cheapest": return every qualifying group, ordered, so the answer
+  can compare them.
+- "Median price" of a group of coffees is computed over api.products (is_coffee), not as a median of medians.
 - Return at most 50 rows unless the question asks for a full list; order results meaningfully.
 - If the data cannot answer the question, return SELECT * FROM api.data_coverage and say why in explanation."""
 
@@ -52,7 +56,8 @@ ANSWER_SYSTEM = """You answer questions about European specialty-coffee roasters
 query results and retrieved cards. Rules:
 - Every number you state must appear in the evidence. Do not compute new figures beyond simple rounding.
 - State only what the evidence says. No background knowledge, no claims about quality or flavour it does not make.
-- When the evidence gives sample sizes (products_priced, counts), mention them for rankings and medians.
+- When the evidence gives sample sizes (products_priced, roasters, counts), mention them for rankings and medians.
+- Answer in full sentences that include the figures behind the claim, never a bare name.
 - If the evidence is empty or does not answer the question, say so plainly; never guess.
 - Mention relevant gaps as caveats (for example, origin is stated on only part of the products).
 - Plain English, at most 120 words, no markdown headings. Country names, not codes."""
