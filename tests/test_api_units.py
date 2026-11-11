@@ -184,3 +184,19 @@ def test_prefer_coffee():
     ]
     assert [h["doc_id"] for h in prefer_coffee("washed Ethiopian coffees", hits, 5)] == ["b", "c"]
     assert [h["doc_id"] for h in prefer_coffee("Ethiopian capsules", hits, 2)] == ["a", "b"]
+
+
+def test_every_pipeline_step_points_at_its_source_block():
+    import re
+
+    from coffee_api.source import PIPELINE_FILE, source_for
+
+    names = set(re.findall(r'trace\.step\("(\w+)"\)', PIPELINE_FILE.read_text(encoding="utf-8")))
+    assert {"screen", "route", "sql_generate", "sql_validate", "sql_execute", "retrieve", "answer"} <= names
+    for name in names:
+        block = source_for(name)
+        assert block is not None, name
+        assert block["file"] == "coffee_api/pipeline.py"
+        assert block["start"] <= block["end"]
+        assert f'trace.step("{name}")' in block["code"].splitlines()[0]
+    assert source_for("no_such_step") is None

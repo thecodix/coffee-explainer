@@ -19,6 +19,7 @@ from .config import Settings
 from .guard import screen
 from .llm import Attempt, LLMResult, LLMUnavailable
 from .schemas import AskResponse, ModelAnswer, RouterDecision, Source, SqlDraft, Step
+from .source import source_for
 from .sql_guard import UnsafeSQL, validate
 
 ROUTER_SYSTEM = """You route questions for "Ask the Coffee Observatory", an assistant over a dataset of European
@@ -90,6 +91,7 @@ class Trace:
                     status=record["status"],
                     ms=int((time.perf_counter() - started) * 1000),
                     detail=record["detail"],
+                    source=source_for(name),
                 )
             )
 

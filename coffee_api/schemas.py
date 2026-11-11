@@ -41,6 +41,7 @@ class Step(BaseModel):
     status: Literal["ok", "fallback", "failed", "skipped", "blocked"]
     ms: int
     detail: dict = Field(default_factory=dict)
+    source: dict | None = None  # {file, start, end, code}: the block of source that ran this step
 
 
 class AskResponse(BaseModel):
