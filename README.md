@@ -95,3 +95,19 @@ curl -s localhost:8020/ask -H 'content-type: application/json' \
 | `QA_ENABLED` | `true` (kill-switch: `false` answers 503 `disabled`) |
 | `CORS_ORIGINS` | `http://localhost:5173` |
 | `EMBEDDING_MODEL` | same model the loader used |
+
+## Deploy (Fly.io)
+
+One machine in Frankfurt (next to Neon), stopped when idle. The image already contains the embedding model.
+
+```bash
+fly auth login
+fly launch --no-deploy --copy-config        # keeps fly.toml; pick another app name if taken
+fly secrets set READER_DATABASE_URL='postgresql://explainer_api:…@…-pooler…/neondb?sslmode=require' \
+                GROQ_API_KEY='…'
+fly deploy --ha=false                        # ONE machine: the rate-limit counters live in memory
+fly scale count 1                            # in case a second machine was created
+curl https://<app>.fly.dev/health
+```
+
+Kill-switch: `fly secrets set QA_ENABLED=false` (or `fly scale count 0` to stop everything).

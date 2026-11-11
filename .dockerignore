@@ -1,0 +1,11 @@
+.env
+.env.*
+.git
+.github
+.venv
+tests
+**/__pycache__
+.pytest_cache
+.ruff_cache
+.fastembed_cache
+*.tar.gz
