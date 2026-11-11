@@ -36,7 +36,8 @@ def _create_reader(conn, name: str) -> None:
         conn.execute(sql.SQL("GRANT explainer_reader TO {}").format(role))
         conn.execute(sql.SQL("ALTER ROLE {} SET default_transaction_read_only = on").format(role))
         conn.execute(sql.SQL("ALTER ROLE {} SET statement_timeout = '5s'").format(role))
-        conn.execute(sql.SQL("ALTER ROLE {} SET search_path = api, rag").format(role))
+        # public: where the pgvector type lives, so the API can register it
+        conn.execute(sql.SQL("ALTER ROLE {} SET search_path = api, rag, public").format(role))
 
 
 def main(argv: list[str] | None = None) -> None:

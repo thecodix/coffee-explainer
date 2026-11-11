@@ -58,3 +58,40 @@ Every view and its key columns carry a `COMMENT`; the API reads them to build th
 - Documents are written from structured fields only: no roaster copy is republished.
 - Tests: `TEST_ADMIN_URL=postgresql://… uv run pytest` (needs a Postgres with pgvector where databases can be
   created; without it the database tests are skipped).
+
+## Q&A API (`coffee_api`)
+
+```
+POST /ask {"question": "..."}  →  status, answer, caveats, sources, intent, data_version, steps[]
+GET  /meta                      →  dataset version, field coverage, questions left today
+GET  /health
+```
+
+Pipeline: **screen** (length, injection patterns) → **route** (`sql` / `rag` / `both` / `out_of_scope`) →
+**SQL branch** (generate → validate with sqlglot: one SELECT, `api` views only, no dangerous functions, LIMIT
+cap → execute as the read-only role; one repair round if validation or the database rejects it) and/or **RAG
+branch** (top-k cards by cosine similarity) → **answer** (only from the evidence) → **check figures** (numbers in
+the answer must appear in the evidence, otherwise a caveat is added).
+
+Each model call walks a fallback chain: a 429, 5xx, timeout or network error moves to the next model; invalid
+JSON is retried once on the same model. If the chain is exhausted the response is `degraded`, never invented.
+`steps[]` records every step with its status, time and detail (models tried, SQL, rows, hits): the explainer
+replays it.
+
+```bash
+export READER_DATABASE_URL='postgresql://explainer_api:<password>@<neon pooled host>/neondb?sslmode=require'
+export GROQ_API_KEY='…'
+uv run uvicorn coffee_api.app:app --port 8020
+curl -s localhost:8020/ask -H 'content-type: application/json' \
+  -d '{"question": "Which origins are cheapest per 100 g in Spanish shops, and what makes Huila special?"}'
+```
+
+| Variable | Default |
+| --- | --- |
+| `ROUTER_MODELS` | `openai/gpt-oss-20b,openai/gpt-oss-120b` |
+| `SQL_MODELS`, `ANSWER_MODELS` | `openai/gpt-oss-120b,openai/gpt-oss-20b` |
+| `ROUTER_TIMEOUT_S`, `MODEL_TIMEOUT_S` | `3`, `8` |
+| `PER_IP_PER_MINUTE`, `PER_IP_PER_DAY`, `DAILY_QUOTA` | `5`, `30`, `300` (in memory: one machine) |
+| `QA_ENABLED` | `true` (kill-switch: `false` answers 503 `disabled`) |
+| `CORS_ORIGINS` | `http://localhost:5173` |
+| `EMBEDDING_MODEL` | same model the loader used |
