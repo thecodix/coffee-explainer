@@ -143,3 +143,44 @@ def test_timing_is_recorded():
     started = time.perf_counter()
     result = client.complete(("a",), "sys", "q", RouterDecision, 1)
     assert 0 <= result.attempts[0].ms <= (time.perf_counter() - started) * 1000 + 1
+
+
+def test_unverified_numbers_reads_thousands_separators():
+    evidence = json.dumps({"text": "Altitude: 1200-1800 m above sea level."})
+    assert unverified_numbers("Huila sits at 1,200–1,800 m.", evidence, "") == []
+    assert unverified_numbers("Huila sits at 2,300 m.", evidence, "") == ["2,300"]
+
+
+def test_llm_json_validate_failed_is_invalid_output():
+    """Groq answers 400 json_validate_failed in JSON mode: retry once, then fall back, keep the reason."""
+    calls = []
+
+    def handler(request):
+        calls.append(json.loads(request.content)["model"])
+        if len(calls) <= 2:
+            return httpx.Response(400, json={"error": {"code": "json_validate_failed", "message": "bad json"}})
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(ROUTE_OK)}}]})
+
+    http = httpx.Client(base_url="https://groq.test", transport=httpx.MockTransport(handler))
+    result = GroqClient("key", "https://groq.test", http=http).complete(("a", "b"), "s", "q", RouterDecision, 1)
+    assert calls == ["a", "a", "b"]
+    assert result.attempts[0].outcome == "invalid_output" and "json_validate_failed" in result.attempts[0].error
+
+
+def test_name_countries():
+    from coffee_api.pipeline import _name_countries
+
+    rows = _name_countries(["origin_country", "price"], [["ET", 5.0], ["ZZ", 1.0], [None, 2.0]])
+    assert rows == [["Ethiopia (ET)", 5.0], ["ZZ", 1.0], [None, 2.0]]
+
+
+def test_prefer_coffee():
+    from coffee_api.data import prefer_coffee
+
+    hits = [
+        {"doc_id": "a", "metadata": {"product_kind": "capsules"}},
+        {"doc_id": "b", "metadata": {"product_kind": "single_origin"}},
+        {"doc_id": "c", "metadata": {"country": "CO"}},
+    ]
+    assert [h["doc_id"] for h in prefer_coffee("washed Ethiopian coffees", hits, 5)] == ["b", "c"]
+    assert [h["doc_id"] for h in prefer_coffee("Ethiopian capsules", hits, 2)] == ["a", "b"]

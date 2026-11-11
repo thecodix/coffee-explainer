@@ -22,6 +22,7 @@ class Attempt:
     outcome: str  # ok | rate_limited | server_error | timeout | network_error | invalid_output | client_error
     ms: int
     status_code: int | None = None
+    error: str | None = None
 
 
 @dataclass
@@ -58,8 +59,9 @@ class GroqClient:
         for model in chain:
             for _try in range(2):
                 started = time.perf_counter()
-                outcome, status, value = self._call(model, system, user, schema, timeout_s, max_tokens)
-                attempts.append(Attempt(model, outcome, int((time.perf_counter() - started) * 1000), status))
+                outcome, status, value, error = self._call(model, system, user, schema, timeout_s, max_tokens)
+                ms = int((time.perf_counter() - started) * 1000)
+                attempts.append(Attempt(model, outcome, ms, status, error))
                 if value is not None:
                     return LLMResult(value=value, model=model, attempts=attempts)
                 if outcome != "invalid_output":
@@ -85,17 +87,29 @@ class GroqClient:
         try:
             response = self._http.post("/chat/completions", json=body, timeout=timeout_s)
         except httpx.TimeoutException:
-            return "timeout", None, None
+            return "timeout", None, None, None
         except httpx.HTTPError:
-            return "network_error", None, None
-        if response.status_code == 429:
-            return "rate_limited", 429, None
-        if response.status_code >= 500:
-            return "server_error", response.status_code, None
-        if response.status_code >= 400:
-            return "client_error", response.status_code, None
+            return "network_error", None, None, None
+        code = response.status_code
+        if code == 429:
+            return "rate_limited", code, None, _error_text(response)
+        if code >= 500:
+            return "server_error", code, None, _error_text(response)
+        if code >= 400:
+            error = _error_text(response)
+            # JSON mode: Groq rejects a generation that is not valid JSON with 400 json_validate_failed.
+            outcome = "invalid_output" if error and "json_validate_failed" in error else "client_error"
+            return outcome, code, None, error
         try:
             content = response.json()["choices"][0]["message"]["content"]
-            return "ok", response.status_code, schema.model_validate_json(content)
-        except (KeyError, IndexError, TypeError, ValueError, ValidationError):
-            return "invalid_output", response.status_code, None
+            return "ok", code, schema.model_validate_json(content), None
+        except (KeyError, IndexError, TypeError, ValueError, ValidationError) as error:
+            return "invalid_output", code, None, str(error)[:200]
+
+
+def _error_text(response: httpx.Response) -> str | None:
+    try:
+        error = response.json().get("error", {})
+        return f"{error.get('code') or error.get('type') or ''}: {error.get('message', '')}"[:200]
+    except ValueError:
+        return response.text[:200] or None

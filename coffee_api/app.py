@@ -34,6 +34,7 @@ def create_app(settings: Settings | None = None, pipeline: Pipeline | None = Non
         if state["pipeline"] is None:
             state["data"] = Data(settings.database_url, settings.embedding_model)
             state["data"].open()
+            state["data"].embedder.embed(["warm-up"])  # load the model now, not on the first question
             state["pipeline"] = Pipeline(
                 settings, GroqClient(settings.groq_api_key, settings.groq_base_url), state["data"]
             )

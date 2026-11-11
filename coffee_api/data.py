@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
@@ -80,7 +81,8 @@ class Data:
 
     def retrieve(self, question: str, k: int) -> list[dict]:
         with self.pool.connection() as conn:
-            return search(conn, self.embedder, question, k=k)
+            hits = search(conn, self.embedder, question, k=k * 3)
+        return prefer_coffee(question, hits, k)
 
     def data_version(self) -> str | None:
         if self._version is None:
@@ -91,6 +93,21 @@ class Data:
         with self.pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
             row = cur.execute("SELECT * FROM api.data_coverage").fetchone()
         return {k: _plain(v) for k, v in (row or {}).items()}
+
+
+NON_COFFEE_HINTS = re.compile(
+    r"capsul|c[aá]psul|pod|equipment|grinder|dripper|kettle|filter|merch|mug|gift|subscription|tea|chocolate",
+    re.IGNORECASE,
+)
+NON_COFFEE_KINDS = {"capsules", "equipment", "merch", "other_drink", "other", "pack"}
+
+
+def prefer_coffee(question: str, hits: list[dict], k: int) -> list[dict]:
+    """Drop non-coffee product cards unless the question asks about them; keep order, return k."""
+    if NON_COFFEE_HINTS.search(question):
+        return hits[:k]
+    kept = [h for h in hits if (h.get("metadata") or {}).get("product_kind") not in NON_COFFEE_KINDS]
+    return kept[:k]
 
 
 def is_query_error(error: Exception) -> bool:
